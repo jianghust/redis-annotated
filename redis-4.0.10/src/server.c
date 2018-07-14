@@ -1342,6 +1342,7 @@ void createSharedObjects(void) {
 void initServerConfig(void) {
     int j;
 
+	//设置互斥锁
     pthread_mutex_init(&server.next_client_id_mutex,NULL);
     pthread_mutex_init(&server.lruclock_mutex,NULL);
     pthread_mutex_init(&server.unixtime_mutex,NULL);
@@ -1812,15 +1813,18 @@ void resetServerStats(void) {
 void initServer(void) {
     int j;
 
+	//设置信号处理函数
     signal(SIGHUP, SIG_IGN);
     signal(SIGPIPE, SIG_IGN);
     setupSignalHandlers();
 
+	//设置系统日志
     if (server.syslog_enabled) {
         openlog(server.syslog_ident, LOG_PID | LOG_NDELAY | LOG_NOWAIT,
             server.syslog_facility);
     }
 
+	//设置pid
     server.pid = getpid();
     server.current_client = NULL;
     server.clients = listCreate();
@@ -1836,6 +1840,7 @@ void initServer(void) {
     server.clients_paused = 0;
     server.system_memory_size = zmalloc_get_memory_size();
 
+	//创建共享对象
     createSharedObjects();
     adjustOpenFilesLimit();
     server.el = aeCreateEventLoop(server.maxclients+CONFIG_FDSET_INCR);
@@ -1855,6 +1860,7 @@ void initServer(void) {
     /* Open the listening Unix domain socket. */
     if (server.unixsocket != NULL) {
         unlink(server.unixsocket); /* don't care if this fails */
+		// bind,listening socket，开始监听端口
         server.sofd = anetUnixServer(server.neterr,server.unixsocket,
             server.unixsocketperm, server.tcp_backlog);
         if (server.sofd == ANET_ERR) {
@@ -1865,12 +1871,14 @@ void initServer(void) {
     }
 
     /* Abort if there are no listening sockets at all. */
+	//没有监听的socket
     if (server.ipfd_count == 0 && server.sofd < 0) {
         serverLog(LL_WARNING, "Configured to not listen anywhere, exiting.");
         exit(1);
     }
 
     /* Create the Redis databases, and initialize other internal state. */
+	//创建并初始化数据库结构
     for (j = 0; j < server.dbnum; j++) {
         server.db[j].dict = dictCreate(&dbDictType,NULL);
         server.db[j].expires = dictCreate(&keyptrDictType,NULL);
@@ -1945,6 +1953,7 @@ void initServer(void) {
     }
 
     /* Open the AOF file if needed. */
+	//如果AOF 持久化功能打开，打开或创建一个AOF文件
     if (server.aof_state == AOF_ON) {
         server.aof_fd = open(server.aof_filename,
                                O_WRONLY|O_APPEND|O_CREAT,0644);
@@ -1959,17 +1968,24 @@ void initServer(void) {
      * no explicit limit in the user provided configuration we set a limit
      * at 3 GB using maxmemory with 'noeviction' policy'. This avoids
      * useless crashes of the Redis instance for out of memory. */
+	//对于32位的实例，默认将最大可用内存限制为3G
     if (server.arch_bits == 32 && server.maxmemory == 0) {
         serverLog(LL_WARNING,"Warning: 32 bit instance detected but no memory limit set. Setting 3 GB maxmemory limit with 'noeviction' policy now.");
         server.maxmemory = 3072LL*(1024*1024); /* 3 GB */
         server.maxmemory_policy = MAXMEMORY_NO_EVICTION;
     }
 
+	//初始化集群管理
     if (server.cluster_enabled) clusterInit();
+	//初始化复制功能有关的脚本缓存
     replicationScriptCacheInit();
+	//初始化脚本系统
     scriptingInit(1);
+	// 初始化慢查询功能
     slowlogInit();
+	//延时监控
     latencyMonitorInit();
+	//初始化 BIO 系统
     bioInit();
     server.initial_memory_usage = zmalloc_used_memory();
 }
@@ -3736,18 +3752,24 @@ int main(int argc, char **argv) {
     spt_init(argc, argv);
 #endif
     setlocale(LC_COLLATE,"");
+	//Redis内存超出限制时候的处理函数
     zmalloc_set_oom_handler(redisOutOfMemoryHandler);
+    //设置rand()产生随机数时的随机数种子,如果seed参数一样，rand产生的结果会是一样
     srand(time(NULL)^getpid());
     gettimeofday(&tv,NULL);
     char hashseed[16];
     getRandomHexChars(hashseed,sizeof(hashseed));
     dictSetHashFunctionSeed((uint8_t*)hashseed);
+    //检查服务器是否以 Sentinel 模式启动
     server.sentinel_mode = checkForSentinelMode(argc,argv);
+    //初始化配置
     initServerConfig();
+	//初始化模块环境
     moduleInitModulesSystem();
 
     /* Store the executable path and arguments in a safe place in order
      * to be able to restart the server later. */
+	//存储路径和参数供重启使用
     server.executable = getAbsolutePath(argv[0]);
     server.exec_argv = zmalloc(sizeof(char*)*(argc+1));
     server.exec_argv[argc] = NULL;
@@ -3756,6 +3778,7 @@ int main(int argc, char **argv) {
     /* We need to init sentinel right now as parsing the configuration file
      * in sentinel mode will have the effect of populating the sentinel
      * data structures with master nodes to monitor. */
+	 // 如果服务器以 Sentinel 模式启动，那么进行 Sentinel 功能相关的初始化并为要监视的主服务器创建一些相应的数据结构
     if (server.sentinel_mode) {
         initSentinelConfig();
         initSentinel();
@@ -3830,7 +3853,9 @@ int main(int argc, char **argv) {
                 "Sentinel needs config file on disk to save state.  Exiting...");
             exit(1);
         }
+		//重置保存条件
         resetServerSaveParams();
+		//载入配置文件， options 是前面分析出的给定选项
         loadServerConfig(configfile,options);
         sdsfree(options);
     }
@@ -3852,21 +3877,31 @@ int main(int argc, char **argv) {
 
     server.supervised = redisIsSupervised(server.supervised_mode);
     int background = server.daemonize && !server.supervised;
+	//设置守护进程模式
     if (background) daemonize();
 
+	//创建并初始化服务器数据结构
     initServer();
+	//创建保存pid文件
     if (background || server.pidfile) createPidFile();
+	//设置redis进程名称
     redisSetProcTitle(argv[0]);
+	//打印 ASCII LOGO
     redisAsciiArt();
+	//校验系统backlog参数设置情况，一般系统设置为128
     checkTcpBacklogSettings();
 
+	//非sentinel模式
     if (!server.sentinel_mode) {
         /* Things not needed when running in Sentinel mode. */
         serverLog(LL_WARNING,"Server initialized");
     #ifdef __linux__
+		//打印内存警告
         linuxMemoryWarnings();
     #endif
+		//从队列中加载模块信息
         moduleLoadFromQueue();
+		//从 AOF 文件或者 RDB 文件中载入数据
         loadDataFromDisk();
         if (server.cluster_enabled) {
             if (verifyClusterConfigWithData() == C_ERR) {
@@ -3879,6 +3914,7 @@ int main(int argc, char **argv) {
         if (server.ipfd_count > 0)
             serverLog(LL_NOTICE,"Ready to accept connections");
         if (server.sofd > 0)
+			//打印套接字
             serverLog(LL_NOTICE,"The server is now ready to accept connections at %s", server.unixsocket);
     } else {
         sentinelIsRunning();
@@ -3889,9 +3925,14 @@ int main(int argc, char **argv) {
         serverLog(LL_WARNING,"WARNING: You specified a maxmemory value that is less than 1MB (current value is %llu bytes). Are you sure this is what you really want?", server.maxmemory);
     }
 
+	//运行事件处理器，一直到服务器关闭为止
     aeSetBeforeSleepProc(server.el,beforeSleep);
+	//
     aeSetAfterSleepProc(server.el,afterSleep);
+	//事件循环启动
     aeMain(server.el);
+
+	//服务关闭，停止事件循环
     aeDeleteEventLoop(server.el);
     return 0;
 }
