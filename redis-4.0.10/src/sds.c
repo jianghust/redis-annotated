@@ -39,6 +39,7 @@
 #include "sds.h"
 #include "sdsalloc.h"
 
+//根据header类型得到header大小
 static inline int sdsHdrSize(char type) {
     switch(type&SDS_TYPE_MASK) {
         case SDS_TYPE_5:
@@ -55,6 +56,7 @@ static inline int sdsHdrSize(char type) {
     return 0;
 }
 
+//根据字符串数据长度计算所需要的header类型
 static inline char sdsReqType(size_t string_size) {
     if (string_size < 1<<5)
         return SDS_TYPE_5;
@@ -202,11 +204,13 @@ sds sdsMakeRoomFor(sds s, size_t addlen) {
     int hdrlen;
 
     /* Return ASAP if there is enough space left. */
+	//只有有足够空间就马上返回，否则就继续执行分配空间的操作
     if (avail >= addlen) return s;
 
     len = sdslen(s);
     sh = (char*)s-sdsHdrSize(oldtype);
     newlen = (len+addlen);
+	//SDS_MAX_PREALLOC == 1024*1024，如果修改后的长度小于1M，则分配的空间是原来的2倍，否则增加1MB的空间
     if (newlen < SDS_MAX_PREALLOC)
         newlen *= 2;
     else
@@ -384,12 +388,17 @@ sds sdsgrowzero(sds s, size_t len) {
  * After the call, the passed sds string is no longer valid and all the
  * references must be substituted with the new pointer returned by the call. */
 sds sdscatlen(sds s, const void *t, size_t len) {
+	//获取当前的字符串长度
     size_t curlen = sdslen(s);
 
+	//判断当前空间是否足够，足够则return,不够则申请更多空间
     s = sdsMakeRoomFor(s,len);
     if (s == NULL) return NULL;
+	//拷贝拼接的数据
     memcpy(s+curlen, t, len);
+	//设置新的len属性
     sdssetlen(s, curlen+len);
+	//为了与c语言的string 兼容，默认末尾会添加一个不计入len的'\0'来标识字符串结束
     s[curlen+len] = '\0';
     return s;
 }
@@ -697,10 +706,15 @@ sds sdstrim(sds s, const char *cset) {
     sp = start = s;
     ep = end = s+sdslen(s)-1;
     while(sp <= end && strchr(cset, *sp)) sp++;
+	//从头部和尾部逐个字符遍历往中间靠拢，如果字符在cest中，则继续前进
     while(ep > sp && strchr(cset, *ep)) ep--;
+	//全部被去除了，长度就是0
     len = (sp > ep) ? 0 : ((ep-sp)+1);
+	//拷贝内容
     if (s != sp) memmove(s, sp, len);
+	//最后一个结束符
     s[len] = '\0';
+	//设置sds的长度
     sdssetlen(s,len);
     return s;
 }
