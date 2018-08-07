@@ -35,6 +35,7 @@
 #define __xstr(s) __str(s)
 #define __str(s) #s
 
+//使用tcmalloc作为内存分配器,tcmalloc是google推出的内存分配器
 #if defined(USE_TCMALLOC)
 #define ZMALLOC_LIB ("tcmalloc-" __xstr(TC_VERSION_MAJOR) "." __xstr(TC_VERSION_MINOR))
 #include <google/tcmalloc.h>
@@ -45,6 +46,7 @@
 #error "Newer version of tcmalloc required"
 #endif
 
+//使用jemalloc作为内存分配器,jemalloc是Facebook推出的内存分配器
 #elif defined(USE_JEMALLOC)
 #define ZMALLOC_LIB ("jemalloc-" __xstr(JEMALLOC_VERSION_MAJOR) "." __xstr(JEMALLOC_VERSION_MINOR) "." __xstr(JEMALLOC_VERSION_BUGFIX))
 #include <jemalloc/jemalloc.h>
@@ -61,6 +63,7 @@
 #define zmalloc_size(p) malloc_size(p)
 #endif
 
+//使用libc作为内存分配器
 #ifndef ZMALLOC_LIB
 #define ZMALLOC_LIB "libc"
 #endif
