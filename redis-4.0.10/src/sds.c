@@ -1292,6 +1292,7 @@ int sdsTest(void) {
 }
 #endif
 
+//宏定义,编译时候定义的选项 ,-D
 #ifdef SDS_TEST_MAIN
 int main(void) {
     return sdsTest();
